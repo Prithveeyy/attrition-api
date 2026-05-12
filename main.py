@@ -79,9 +79,9 @@ def home():
 # PREDICTION ROUTE
 # ============================================
 
-@app.post("/predict")
 def predict(data: EmployeeData):
-replacements = {}
+
+    replacements = {}
 
 input_data = {
 
