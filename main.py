@@ -1,14 +1,28 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
+
 import pickle
 import pandas as pd
 
 # ============================================
-# CREATE FASTAPI APP
+# FASTAPI APP
 # ============================================
 
 app = FastAPI()
+
+# ============================================
+# ENABLE CORS
+# ============================================
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ============================================
 # LOAD MODEL
@@ -34,6 +48,25 @@ TRAINING_COLUMNS = [
     "PerformanceScore",
     "ConflictScore"
 ]
+
+# ============================================
+# FALLBACK VALUES
+# ============================================
+
+FALLBACK_VALUES = {
+
+    "EngagementScore": 5,
+    "TenureMonths": 24,
+    "StressScore": 5,
+    "PromotionDelay": 2,
+    "ExternalCompRatio": 1.0,
+    "InternalCompPosition": 5,
+    "SalaryStagnation": 2,
+    "EngagementTrend": 0.0,
+    "SentimentScore": 0.68,
+    "PerformanceScore": 5,
+    "ConflictScore": 3
+}
 
 # ============================================
 # INPUT SCHEMA
@@ -79,55 +112,51 @@ def home():
 # PREDICTION ROUTE
 # ============================================
 
+@app.post("/predict")
 def predict(data: EmployeeData):
 
     replacements = {}
 
-input_data = {
+    input_data = {
 
-    "EngagementScore": data.EngagementScore,
-    "TenureMonths": data.TenureMonths,
-    "StressScore": data.StressScore,
-    "PromotionDelay": data.PromotionDelay,
-    "ExternalCompRatio": data.ExternalCompRatio,
-    "InternalCompPosition": data.InternalCompPosition,
-    "SalaryStagnation": data.SalaryStagnation,
-    "EngagementTrend": data.EngagementTrend,
-    "SentimentScore": data.SentimentScore,
-    "PerformanceScore": data.PerformanceScore,
-    "ConflictScore": data.ConflictScore
-}
+        "EngagementScore": data.EngagementScore,
+        "TenureMonths": data.TenureMonths,
+        "StressScore": data.StressScore,
+        "PromotionDelay": data.PromotionDelay,
+        "ExternalCompRatio": data.ExternalCompRatio,
+        "InternalCompPosition": data.InternalCompPosition,
+        "SalaryStagnation": data.SalaryStagnation,
+        "EngagementTrend": data.EngagementTrend,
+        "SentimentScore": data.SentimentScore,
+        "PerformanceScore": data.PerformanceScore,
+        "ConflictScore": data.ConflictScore
+    }
 
-# ── FALLBACK / MEAN REPLACEMENTS ──
+    # ============================================
+    # REPLACE NULL / ZERO VALUES
+    # ============================================
 
-fallback_values = {
+    for key in input_data:
 
-    "EngagementScore": 5,
-    "TenureMonths": 24,
-    "StressScore": 5,
-    "PromotionDelay": 2,
-    "ExternalCompRatio": 1.0,
-    "InternalCompPosition": 5,
-    "SalaryStagnation": 2,
-    "EngagementTrend": 0.0,
-    "SentimentScore": 0.68,
-    "PerformanceScore": 5,
-    "ConflictScore": 3
-}
+        value = input_data[key]
 
-for key in input_data:
+        if value is None or value == 0:
 
-    value = input_data[key]
+            input_data[key] = FALLBACK_VALUES[key]
 
-    if value is None or value == 0:
+            replacements[key] = FALLBACK_VALUES[key]
 
-        input_data[key] = fallback_values[key]
-
-        replacements[key] = fallback_values[key]
+    # ============================================
+    # DATAFRAME
+    # ============================================
 
     input_df = pd.DataFrame(
         [input_data]
     )[TRAINING_COLUMNS]
+
+    # ============================================
+    # PREDICTION
+    # ============================================
 
     probability = model.predict_proba(input_df)[0][1]
 
@@ -140,13 +169,17 @@ for key in input_data:
     else:
         prediction = "STABLE"
 
-return {
+    # ============================================
+    # RESPONSE
+    # ============================================
 
-    "prediction": prediction,
+    return {
 
-    "risk_score": round(risk_score, 2),
+        "prediction": prediction,
 
-    "stability_score": round(stability_score, 2),
+        "risk_score": round(risk_score, 2),
 
-    "replacements": replacements
-}
+        "stability_score": round(stability_score, 2),
+
+        "replacements": replacements
+    }
